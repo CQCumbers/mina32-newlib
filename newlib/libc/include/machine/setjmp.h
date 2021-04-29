@@ -123,6 +123,10 @@ _BEGIN_STD_C
 #define _JBLEN 10
 #endif
 
+#ifdef __mina32
+#define _JBLEN 13
+#endif
+
 #ifdef __mips__
 # if defined(__mips64)
 #  define _JBTYPE long long

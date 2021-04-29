@@ -249,6 +249,9 @@ case "${host_cpu}" in
   mep)
 	machine_dir=mep
 	;;
+  mina32*)
+	machine_dir=mina32
+	;;
   mips*)
 	machine_dir=mips
 	libm_machine_dir=mips
@@ -819,6 +822,9 @@ newlib_cflags="${newlib_cflags} -DCLOCK_PROVIDED -DMALLOC_PROVIDED -DEXIT_PROVID
   microblaze*-*-*)
    	default_newlib_io_long_long="yes"
  	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES -DSMALL_MEMORY -D_REENT_SMALL"
+	;;
+  mina32*-*-*)
+	syscall_dir=syscalls
 	;;
   mips64vr*-*-*)
 	default_newlib_io_long_long="yes"

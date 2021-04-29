@@ -53,6 +53,7 @@ if test -n "${machine_dir}"; then
 	m88k) AC_CONFIG_SUBDIRS(m88k) ;;
 	mep ) AC_CONFIG_SUBDIRS(mep) ;;
 	microblaze ) AC_CONFIG_SUBDIRS(microblaze) ;;
+	mina32) AC_CONFIG_SUBDIRS(mina32) ;;
 	mips) AC_CONFIG_SUBDIRS(mips) ;;
 	riscv) AC_CONFIG_SUBDIRS(riscv) ;;
 	mn10200) AC_CONFIG_SUBDIRS(mn10200) ;;

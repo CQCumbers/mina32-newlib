@@ -815,6 +815,7 @@ m68k
 m88k
 mep
 microblaze
+mina32
 mips
 riscv
 mn10200
@@ -11913,6 +11914,8 @@ subdirs="$subdirs a29k"
 	mep ) subdirs="$subdirs mep"
  ;;
 	microblaze ) subdirs="$subdirs microblaze"
+ ;;
+	mina32) subdirs="$subdirs mina32"
  ;;
 	mips) subdirs="$subdirs mips"
  ;;

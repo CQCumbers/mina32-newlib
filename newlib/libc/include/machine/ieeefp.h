@@ -242,6 +242,10 @@
 #define __IEEE_LITTLE_ENDIAN
 #endif
 
+#ifdef __mina32
+#define __IEEE_LITTLE_ENDIAN
+#endif
+
 #ifdef __MIPSEL__
 #define __IEEE_LITTLE_ENDIAN
 #endif
