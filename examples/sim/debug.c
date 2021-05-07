@@ -1,5 +1,6 @@
 #include "debug.h"
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,7 +19,7 @@ static void recv_gdb(sock_t sockfd, char *cmd_buf) {
   char cmd_c = 0; uint8_t cmd_idx = 0;
   // ignore acks and invalid cmds
   if (!recv(sockfd, &cmd_c, 1, MSG_WAITALL)) return;
-  if (cmd_c == '+') return;
+  if (cmd_c == '+' || cmd_c == 3) return;
   if (cmd_c != '$') printf("Invalid gdb command: %x\n", cmd_c), exit(1);
   // read cmd packet data (no RLE or escapes)
   while (recv(sockfd, &cmd_c, 1, MSG_WAITALL) && cmd_c != '#')
@@ -117,7 +118,7 @@ static void set_break(sock_t sockfd, const char *cmd_buf, int active) {
   unsigned addr = strtoul(cmd_buf + 3, NULL, 16);
   switch (cmd_buf[1]) {
     case '0':
-      cfg.set_break(addr, active);
+      active ? cfg.set_break(addr) : cfg.clr_break(addr);
       return send_gdb(sockfd, "OK");
     case '2':
       printf("Watchpoints not supported\n");
@@ -151,6 +152,11 @@ void debug_init(unsigned port, debug_t conf) {
   cfg = conf, printf("Connected to gdb client\n");
 }
 
+// check socket for ctrl-c from gdb
+int debug_poll(void) {
+  struct pollfd pfd = {gdb_sock, POLLIN};
+  return poll(&pfd, 1, 0) == 1;
+}
 
 // process gdb remote protocol commands
 int debug_update(void) {
