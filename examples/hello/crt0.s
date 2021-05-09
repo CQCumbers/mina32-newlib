@@ -20,9 +20,9 @@ _reset:
 .type   _start,@function
 _start:	  
 ; Init stack/frame pointers
-    movu r15, 16
+    movu r15, 15
     movl r15, 0
-    movu r14, 16
+    movu r14, 15
     movl r14, 0
 
 ; Clear BSS

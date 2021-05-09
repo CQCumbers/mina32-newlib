@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MEM_SIZE 0x100000
+#define VECTORS 0x14850
+
 typedef struct {
   unsigned regs[16];
   unsigned bank[8];
@@ -25,53 +28,22 @@ typedef struct {
   } mcr;
 } mina_t;
 
-/* === Memory Access === */
-
-#define MEM_SIZE 0x100000
-static char mem[MEM_SIZE];
-
-static unsigned read32(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 1);
-  return memcpy(&val, mem + idx, 4), val;
-}
-
-static unsigned read16(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 1);
-  return memcpy(&val, mem + idx, 2), val;
-}
-
-static unsigned read8(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 1);
-  return memcpy(&val, mem + idx, 1), val;
-}
-
-static void write32(unsigned addr, unsigned val) {
-  unsigned idx = addr & (MEM_SIZE - 1);
-  memcpy(mem + idx, &val, 4);
-}
-
-static void write16(unsigned addr, unsigned val) {
-  unsigned idx = addr & (MEM_SIZE - 1);
-  memcpy(mem + idx, &val, 2);
-}
-
-static void write8(unsigned addr, unsigned val) {
-  if (addr == 0xffffff04) printf("%c", val);
-  unsigned idx = addr & (MEM_SIZE - 1);
-  memcpy(mem + idx, &val, 1);
-}
-
 /* === Debugger Functions === */
 
-typedef struct {
+typedef struct break_t break_t;
+
+struct break_t {
   unsigned addr;
   unsigned inst;
-  unsigned dist;
-} break_t;
+  break_t *next;
+};
 
-#define MAX_BREAKS 0x100
-static break_t breaks[MAX_BREAKS];
+static char watches[MEM_SIZE];
+static break_t *breaks;
 static unsigned step = 1;
+
+static unsigned read32(unsigned addr);
+static void write32(unsigned addr, unsigned val);
 
 static unsigned read_reg(void *ctx, unsigned idx) {
   mina_t *cpu = (mina_t*)ctx;
@@ -82,32 +54,90 @@ static unsigned read_reg(void *ctx, unsigned idx) {
   return -1;
 }
 
-static int set_break(unsigned addr) {
-  break_t tmp, e = {addr, read32(addr), 1};
-  for (unsigned i = addr / 4;; ++e.dist, ++i) {
-    break_t *slot = breaks + i % MAX_BREAKS;
-    if (slot->dist == 0)
-      return write32(addr, 0x70000000), *slot = e, 1;
-    else if (slot->dist >= e.dist)
-      tmp = e, e = *slot, *slot = tmp;
-    else if (slot->addr == e.addr)
-      return 0;
-  }
+static void write_reg(void *ctx, unsigned idx, unsigned val) {
+  mina_t *cpu = (mina_t*)ctx;
+  if (idx <= 15) cpu->regs[idx] = val;
+  if (idx == 16) cpu->mcr.val = val;
+  if (idx == 17) cpu->fret = val;
+  if (idx == 18) cpu->pc = val;
 }
 
-static int clr_break(unsigned addr) {
-  unsigned dist = 1, i = addr / 4;
-  for (break_t *last = 0;; ++dist, ++i) {
-    break_t *slot = breaks + i % MAX_BREAKS;
-    if (!last && slot->dist < dist)
-      return 0;
-    else if (!last && slot->addr == addr)
-      write32(addr, slot->inst), last = slot;
-    else if (last && slot->dist > 1)
-      *last = *slot, --last->dist, last = slot;
-    else if (last && slot->dist < 2)
-      return last->dist = 0;
-  }
+static void set_break(unsigned addr) {
+  break_t *tmp = breaks;
+  breaks = malloc(sizeof(break_t));
+
+  breaks->addr = addr;
+  breaks->inst = read32(addr);
+  breaks->next = tmp;
+  write32(addr, 0x70000000);
+}
+
+static void clr_break(unsigned addr) {
+  break_t **ptr = &breaks, *tmp = *ptr;
+  while (tmp && tmp->addr != addr)
+    ptr = &tmp->next, tmp = *ptr;
+
+  if (tmp == NULL) return;
+  write32(addr, tmp->inst);
+  *ptr = tmp->next, free(tmp);
+}
+
+static void check_watch(unsigned idx, unsigned len, char type) {
+  for (unsigned i = idx; i < idx + len; ++i)
+    if (watches[i] & type) step = ~i;
+}
+
+static void set_watch(unsigned addr, unsigned len, char type) {
+  unsigned idx = addr & (MEM_SIZE - 1);
+  for (unsigned i = 0; i < len; ++i)
+    watches[idx + i] |= type;
+}
+
+static void clr_watch(unsigned addr, unsigned len, char type) {
+  unsigned idx = addr & (MEM_SIZE - 1);
+  for (unsigned i = 0; i < len; ++i)
+    watches[idx + i] &= ~type;
+}
+
+/* === Memory Access === */
+
+static char mem[MEM_SIZE];
+
+static unsigned read32(unsigned addr) {
+  unsigned val = 0, idx = addr & (MEM_SIZE - 4);
+  check_watch(idx, 4, WATCH_READ);
+  return memcpy(&val, mem + idx, 4), val;
+}
+
+static unsigned read16(unsigned addr) {
+  unsigned val = 0, idx = addr & (MEM_SIZE - 2);
+  check_watch(idx, 2, WATCH_READ);
+  return memcpy(&val, mem + idx, 2), val;
+}
+
+static unsigned read8(unsigned addr) {
+  unsigned val = 0, idx = addr & (MEM_SIZE - 1);
+  check_watch(idx, 1, WATCH_READ);
+  return memcpy(&val, mem + idx, 1), val;
+}
+
+static void write32(unsigned addr, unsigned val) {
+  unsigned idx = addr & (MEM_SIZE - 4);
+  check_watch(idx, 4, WATCH_WRITE);
+  memcpy(mem + idx, &val, 4);
+}
+
+static void write16(unsigned addr, unsigned val) {
+  unsigned idx = addr & (MEM_SIZE - 2);
+  check_watch(idx, 2, WATCH_WRITE);
+  memcpy(mem + idx, &val, 2);
+}
+
+static void write8(unsigned addr, unsigned val) {
+  if (addr == 0xffffff04) printf("%c", val);
+  unsigned idx = addr & (MEM_SIZE - 1);
+  check_watch(idx, 1, WATCH_WRITE);
+  memcpy(mem + idx, &val, 1);
 }
 
 /* === Simulator Interface === */
@@ -160,7 +190,6 @@ typedef enum {
   FAULT_RESET = 15
 } fault_t;
 
-#define VECTORS 0x14850
 static void execute(mina_t *cpu);
 
 static int imms(inst_t inst, int shift) {
@@ -177,14 +206,14 @@ static void fault(mina_t *cpu, int type) {
 }
 
 static void execute(mina_t *cpu) {
-  unsigned next = cpu->pc;
+  unsigned *regs, next = cpu->pc;
   unsigned char cycles = 0;
   while (1) {
-    unsigned *regs = cpu->regs;
-    cpu->pc = next, next += 4;
+    regs = cpu->regs, cpu->pc = next;
     if (!cycles++) step |= debug_poll();
-    if (step) step = debug_update();
+    if (step) step = debug_update(step);
 
+    next = cpu->pc + 4;
     inst_t inst = {read32(cpu->pc)};
     switch (inst.b.opcode) {
     default: fault(cpu, FAULT_INST);
@@ -835,8 +864,10 @@ int main(int argc, const char* argv[]) {
   // Setup debugger
   mina_t cpu = {0};
   debug_t conf = {
-    &cpu, read_reg, read32,
-    set_break, clr_break
+    &cpu, read8, write8,
+    read_reg, write_reg,
+    set_break, clr_break,
+    set_watch, clr_watch
   };
   debug_init(4242, conf);
 

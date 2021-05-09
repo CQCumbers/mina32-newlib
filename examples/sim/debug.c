@@ -91,16 +91,34 @@ static void query(sock_t sockfd, const char *cmd_buf) {
 static void read_regs(sock_t sockfd) {
   char buf[BUF_SIZE - 4] = {0};
   for (unsigned idx = 0; idx < N_REGS; ++idx)
-    sprintf(buf + idx * 8, "%08x", ntohl(cfg.read_reg(cfg.ctx, idx)));
+    sprintf(buf + idx * 8, "%08x", htonl(cfg.read_reg(cfg.ctx, idx)));
   send_gdb(sockfd, buf);
+}
+
+// write all available registers
+static void write_regs(sock_t sockfd, const char *cmd_buf) {
+  char buf[9] = {0};
+  for (unsigned idx = 0; idx < N_REGS; ++idx) {
+    memcpy(buf, cmd_buf + 1 + idx * 8, 8);
+    cfg.write_reg(cfg.ctx, idx, ntohl(strtoul(buf, NULL, 16)));
+  }
+  send_gdb(sockfd, "OK");
 }
 
 // read specific register via callback
 static void read_reg(sock_t sockfd, const char *cmd_buf) {
   char buf[9] = {0};
   unsigned idx = strtoul(cmd_buf + 1, NULL, 16);
-  sprintf(buf, "%08x", ntohl(cfg.read_reg(cfg.ctx, idx)));
+  sprintf(buf, "%08x", htonl(cfg.read_reg(cfg.ctx, idx)));
   send_gdb(sockfd, buf);
+}
+
+// write specific register via callback
+static void write_reg(sock_t sockfd, const char *cmd_buf) {
+  char *ptr = (char*)cmd_buf;
+  unsigned idx = strtoul(cmd_buf + 1, &ptr, 16);
+  cfg.write_reg(cfg.ctx, idx, ntohl(strtoul(ptr + 1, NULL, 16)));
+  send_gdb(sockfd, "OK");
 }
 
 // read from memory address via callback
@@ -108,20 +126,36 @@ static void read_mem(sock_t sockfd, const char *cmd_buf) {
   char buf[BUF_SIZE - 4] = {0}, *ptr = (char*)cmd_buf;
   unsigned addr = strtoul(cmd_buf + 1, &ptr, 16);
   unsigned len = strtoul(ptr + 1, NULL, 16);
-  for (unsigned i = 0; i < len; i += 4)
-    sprintf(buf + i * 2, "%08x", ntohl(cfg.read_mem(addr + i)));
+  for (unsigned i = 0; i < len; ++i)
+    sprintf(buf + i * 2, "%02x", cfg.read_mem(addr + i));
   send_gdb(sockfd, buf);
+}
+
+// write to memory address via callback
+static void write_mem(sock_t sockfd, const char *cmd_buf) {
+  char buf[3] = {0}, *ptr = (char*)cmd_buf;
+  unsigned addr = strtoul(cmd_buf + 1, &ptr, 16);
+  unsigned len = strtoul(ptr + 1, &ptr, 16);
+  for (unsigned i = 0; i < len; ++i) {
+    memcpy(buf, ptr + 1 + i * 2, 2);
+    cfg.write_mem(addr + i, strtoul(buf, NULL, 16));
+  }
+  send_gdb(sockfd, "OK");
 }
 
 // set breakpoint address via callback
 static void set_break(sock_t sockfd, const char *cmd_buf, int active) {
-  unsigned addr = strtoul(cmd_buf + 3, NULL, 16);
+  char *ptr = (char*)cmd_buf;
+  unsigned addr = strtoul(cmd_buf + 3, &ptr, 16);
+  unsigned len = strtoul(ptr + 1, NULL, 16);
   switch (cmd_buf[1]) {
-    case '0':
-      active ? cfg.set_break(addr) : cfg.clr_break(addr);
+    case '0': case '1':
+      if (active != 0) cfg.set_break(addr);
+      if (active == 0) cfg.clr_break(addr);
       return send_gdb(sockfd, "OK");
-    case '2':
-      printf("Watchpoints not supported\n");
+    case '2': case '3': case '4':
+      if (active != 0) cfg.set_watch(addr, len, cmd_buf[1] - '1');
+      if (active == 0) cfg.clr_watch(addr, len, cmd_buf[1] - '1');
       return send_gdb(sockfd, "OK");
     default:
       return send_gdb(sockfd, "E01");
@@ -153,14 +187,16 @@ void debug_init(unsigned port, debug_t conf) {
 }
 
 // check socket for ctrl-c from gdb
-int debug_poll(void) {
+unsigned debug_poll(void) {
   struct pollfd pfd = {gdb_sock, POLLIN};
   return poll(&pfd, 1, 0) == 1;
 }
 
 // process gdb remote protocol commands
-int debug_update(void) {
-  send_gdb(gdb_sock, "S05");
+unsigned debug_update(unsigned step) {
+  char buf[20] = "S05";
+  if (step > 1) sprintf(buf + 3, "watch:%x;", ~step);
+  send_gdb(gdb_sock, buf);
   while (1) {
     memset(cmd_buf, 0, BUF_SIZE);
     recv_gdb(gdb_sock, cmd_buf);
@@ -170,10 +206,13 @@ int debug_update(void) {
       case 'c': case 'C': return 0;
       case 's': return 1;
       case 'g': read_regs(gdb_sock); break;
+      case 'G': write_regs(gdb_sock, cmd_buf); break;
       case 'p': read_reg(gdb_sock, cmd_buf); break;
+      case 'P': write_reg(gdb_sock, cmd_buf); break;
       case 'H': send_gdb(gdb_sock, "OK"); break;
       case 'k': printf("Killed by gdb\n"); exit(0);
       case 'm': read_mem(gdb_sock, cmd_buf); break;
+      case 'M': write_mem(gdb_sock, cmd_buf); break;
       case 'q': query(gdb_sock, cmd_buf); break;
       case 'z': set_break(gdb_sock, cmd_buf, 0); break;
       case 'Z': set_break(gdb_sock, cmd_buf, 1); break;
