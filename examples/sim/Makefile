@@ -8,3 +8,4 @@ simulator: simulator.c debug.c debug.h elf.h
 
 clean:
 	rm simulator
+	rm -rf simulator.dSYM

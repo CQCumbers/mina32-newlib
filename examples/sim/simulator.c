@@ -4,8 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MEM_SIZE 0x100000
-#define VECTORS 0x14850
+#define MEM_SIZE 0x10000
 
 typedef struct {
   unsigned regs[16];
@@ -198,7 +197,7 @@ static int imms(inst_t inst, int shift) {
 }
 
 static void fault(mina_t *cpu, int type) {
-  cpu->fret = cpu->pc, cpu->pc = VECTORS;
+  cpu->fret = cpu->pc, cpu->pc = 0;
   cpu->omcr = cpu->mcr.val;
   cpu->mcr.mode = 1, cpu->mcr.id = 1;
   cpu->mcr.cause = type & 15;

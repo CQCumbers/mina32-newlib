@@ -16,7 +16,7 @@ export AR_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-ar
 export NM_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-nm
 export RANLIB_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-ranlib
 export READELF_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-readelf
-export CFLAGS_FOR_TARGET="-ffreestanding -target ${TARGET} -g -v"
+export CFLAGS_FOR_TARGET="-O3 -ffreestanding -target ${TARGET} -g -v"
 export AS_FOR_TARGET=${INSTALL_PREFIX}/bin/clang
 export LD_FOR_TARGET=${INSTALL_PREFIX}/bin/clang
 

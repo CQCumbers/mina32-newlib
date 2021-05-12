@@ -17,7 +17,7 @@ make simulator
 Now run hello world with:
 cd /mina32-newlib/examples/hello
 make hello
-/llvm-newlib/examples/sim/simulator hello
+/mina32-newlib/examples/sim/simulator hello
 
 and in seperate window:
 /llvm-project/build/bin/lldb hello

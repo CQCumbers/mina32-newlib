@@ -5,7 +5,7 @@ typedef enum {
   WATCH_NONE = 0,
   WATCH_WRITE = 1,
   WATCH_READ = 2,
-  WATCH_ACCESS = 3,
+  WATCH_ACCESS = 3
 } watch_t;
 
 typedef struct {
