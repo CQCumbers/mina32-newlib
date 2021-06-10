@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <SDL2/SDL.h>
 
-#define MEM_SIZE 0x10000
+#define MEM_SIZE 0x04000000
+static char mem[MEM_SIZE];
 
 typedef struct {
   unsigned regs[16];
@@ -82,8 +84,8 @@ static void clr_break(unsigned addr) {
 }
 
 static void check_watch(unsigned idx, unsigned len, char type) {
-  for (unsigned i = idx; i < idx + len; ++i)
-    if (watches[i] & type) step = ~i;
+  // for (unsigned i = idx; i < idx + len; ++i)
+  //   if (watches[i] & type) step = ~i;
 }
 
 static void set_watch(unsigned addr, unsigned len, char type) {
@@ -98,42 +100,142 @@ static void clr_watch(unsigned addr, unsigned len, char type) {
     watches[idx + i] &= ~type;
 }
 
+/* === Memory Mapped IO === */
+
+static long cycles;
+static SDL_Window *window;
+static SDL_Renderer *renderer;
+static SDL_Texture *texture;
+
+static unsigned key_queue[16];
+static unsigned key_read;
+static unsigned key_write;
+
+static unsigned hdmi_dirty;
+static unsigned hdmi_addr;
+static unsigned hdmi_resx;
+static unsigned hdmi_resy;
+
+static unsigned key_code(SDL_Event e) {
+  // based on doomgeneric
+  unsigned key = e.key.keysym.sym;
+  switch (key) {
+  default: return key & 0xff;
+  case SDLK_RETURN: return 0x0d;
+  case SDLK_ESCAPE: return 0x1b;
+  case SDLK_SPACE:  return 0xa2;
+  case SDLK_LCTRL:  return 0xa3;
+  case SDLK_RCTRL:  return 0xa3;
+  case SDLK_LSHIFT: return 0xb6;
+  case SDLK_RSHIFT: return 0xb6;
+  case SDLK_LEFT:   return 0xac;
+  case SDLK_UP:     return 0xad;
+  case SDLK_RIGHT:  return 0xae;
+  case SDLK_DOWN:   return 0xaf;
+  }
+}
+
+static void hdmi_update(void) {
+  // update frame resolution
+  if (hdmi_dirty) {
+    if (texture) SDL_DestroyTexture(texture);
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+      SDL_TEXTUREACCESS_STREAMING, hdmi_resx, hdmi_resy);
+    hdmi_dirty = 0;
+  }
+
+  // copy frame to screen
+  void *pixels = NULL;
+  int pitch, res = hdmi_resx * hdmi_resy;
+  SDL_LockTexture(texture, NULL, &pixels, &pitch);
+  memcpy(pixels, mem + hdmi_addr, res * 4);
+  SDL_UnlockTexture(texture);
+
+  // present updated screen
+  SDL_RenderCopy(renderer, texture, NULL, NULL);
+  SDL_RenderPresent(renderer);
+
+  // handle keyboard inputs
+  for (SDL_Event e; SDL_PollEvent(&e);) {
+    if (e.type == SDL_QUIT) exit(0);
+    if (e.type == SDL_KEYDOWN) {
+      unsigned i = key_write++ & 15;
+      key_queue[i] = key_code(e) | 0x100;
+    } else if (e.type == SDL_KEYUP) {
+      unsigned i = key_write++ & 15;
+      key_queue[i] = key_code(e);
+    }
+  }
+}
+
+static unsigned get_keys(void) {
+  if (key_read == key_write) return 0;
+  unsigned i = key_read++ & 15;
+  return key_queue[i] | 0x10000;
+}
+
 /* === Memory Access === */
 
-static char mem[MEM_SIZE];
+static unsigned mmio_read(unsigned addr) {
+  switch (addr & 0xfc) {
+  case 0x00: return 0x10400;
+  case 0x04: return 0x8000 | getchar();
+  case 0x10: return cycles >> 13;
+  case 0x20: return get_keys();
+  case 0x30: return hdmi_addr;
+  case 0x34: return hdmi_resx;
+  case 0x38: return hdmi_resy;
+  default: return 0;
+  }
+}
+
+static void mmio_write(unsigned addr, unsigned val) {
+  switch (addr & 0xfc) {
+  case 0x04: putchar(val & 0xff); return;
+  case 0x30: hdmi_addr = val; return;
+  case 0x34: hdmi_resx = val; hdmi_dirty = 1; return;
+  case 0x38: hdmi_resy = val; hdmi_dirty = 1; return;
+  default: return;
+  }
+}
 
 static unsigned read32(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 4);
+  if (addr >= ~0xff) return mmio_read(addr);
+  unsigned val, idx = addr & (MEM_SIZE - 4);
   check_watch(idx, 4, WATCH_READ);
   return memcpy(&val, mem + idx, 4), val;
 }
 
 static unsigned read16(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 2);
+  if (addr >= ~0xff) return mmio_read(addr);
+  unsigned val, idx = addr & (MEM_SIZE - 2);
   check_watch(idx, 2, WATCH_READ);
   return memcpy(&val, mem + idx, 2), val;
 }
 
 static unsigned read8(unsigned addr) {
-  unsigned val = 0, idx = addr & (MEM_SIZE - 1);
+  if (addr >= ~0xff) return mmio_read(addr);
+  unsigned val, idx = addr & (MEM_SIZE - 1);
   check_watch(idx, 1, WATCH_READ);
   return memcpy(&val, mem + idx, 1), val;
 }
 
 static void write32(unsigned addr, unsigned val) {
+  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 4);
   check_watch(idx, 4, WATCH_WRITE);
   memcpy(mem + idx, &val, 4);
 }
 
 static void write16(unsigned addr, unsigned val) {
+  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 2);
   check_watch(idx, 2, WATCH_WRITE);
   memcpy(mem + idx, &val, 2);
 }
 
 static void write8(unsigned addr, unsigned val) {
-  if (addr == 0xffffff04) printf("%c", val);
+  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 1);
   check_watch(idx, 1, WATCH_WRITE);
   memcpy(mem + idx, &val, 1);
@@ -197,6 +299,7 @@ static int imms(inst_t inst, int shift) {
 }
 
 static void fault(mina_t *cpu, int type) {
+  printf("FAULT TYPE %d at %x\n", type, cpu->pc);
   cpu->fret = cpu->pc, cpu->pc = 0;
   cpu->omcr = cpu->mcr.val;
   cpu->mcr.mode = 1, cpu->mcr.id = 1;
@@ -206,10 +309,10 @@ static void fault(mina_t *cpu, int type) {
 
 static void execute(mina_t *cpu) {
   unsigned *regs, next = cpu->pc;
-  unsigned char cycles = 0;
   while (1) {
     regs = cpu->regs, cpu->pc = next;
-    if (!cycles++) step |= debug_poll();
+    if (!(cycles++ & 0xfff)) step |= debug_poll();
+    if (!(cycles & 0x3ffff)) hdmi_update();
     if (step) step = debug_update(step);
 
     next = cpu->pc + 4;
@@ -287,7 +390,7 @@ static void execute(mina_t *cpu) {
       unsigned op1 = regs[inst.s.src1];
       unsigned op2 = regs[inst.s.src2];
       unsigned res = op2 ? op1 % op2 : 0;
-      regs[inst.i.dest] = res;
+      regs[inst.s.dest] = res;
       break;
     }
     case 0x0c: {  // SLT
@@ -859,6 +962,13 @@ int main(int argc, const char* argv[]) {
     if (!fread(seg, phdrs[i].p_filesz, 1, fd))
       puts("Can't read segment"), exit(1);
   }
+
+  // Setup hdmi interface
+  SDL_Init(SDL_INIT_VIDEO);
+  SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
+  SDL_CreateWindowAndRenderer(640, 480, 0, &window, &renderer);
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+  SDL_RenderClear(renderer);
 
   // Setup debugger
   mina_t cpu = {0};

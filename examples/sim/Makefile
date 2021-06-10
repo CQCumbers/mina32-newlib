@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -Wall -std=c11 -g -O3
+CFLAGS := -Wall -std=c11 -g -O3 -I/usr/local/Cellar -lsdl2
 
 .PHONY: clean
 

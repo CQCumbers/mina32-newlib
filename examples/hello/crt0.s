@@ -19,26 +19,23 @@ _reset:
 .type   _start,@function
 _start:	  
 ; Init stack/frame pointers
-    movu r15, 15
-    movl r15, 0
-    movu r14, 15
-    movl r14, 0
+    movu r15, %hi(_end)
+    movl r15, %lo(_end)
+    mov  r14, r15
 
 ; Clear BSS
     movi r0, 0
     movu r1, %hi(__bss_start)
     movl r1, %lo(__bss_start)
-    movu r2, %hi(__bss_end)
-    movl r2, %lo(__bss_end)
 .L2:
     st r0, [r1, 0]
     addi r1, r1, 4
-    cmp.eq r1, r2
+    cmp.eq r1, r15
     bf .L2
 
 ; Jump to main
-    movi r0, 0
     movi r1, 0
+    movi r2, 0
     call main
 
 ; Hang upon return

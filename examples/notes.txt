@@ -14,6 +14,13 @@ Then build simulator with:
 cd /mina32-newlib/examples/sim
 make simulator
 
+Create sysroot by copying:
+cd /mina32-newlib/examples/sysroot/usr
+cp /mina32-newlib/build/mina32-elf/include/* ./include
+cp /llvm-project/rt-build/lib/generic/* ./lib
+cp /mina32-newlib/build/mina32-elf/lib/* ./lib
+cp /mina32-newlib/examples/hello/crt0.o ./lib
+
 Now run hello world with:
 cd /mina32-newlib/examples/hello
 make hello

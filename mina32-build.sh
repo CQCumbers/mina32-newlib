@@ -16,7 +16,7 @@ export AR_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-ar
 export NM_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-nm
 export RANLIB_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-ranlib
 export READELF_FOR_TARGET=${INSTALL_PREFIX}/bin/llvm-readelf
-export CFLAGS_FOR_TARGET="-O3 -ffreestanding -target ${TARGET} -g -v"
+export CFLAGS_FOR_TARGET="-Os -ffreestanding -target ${TARGET} -g"
 export AS_FOR_TARGET=${INSTALL_PREFIX}/bin/clang
 export LD_FOR_TARGET=${INSTALL_PREFIX}/bin/clang
 
@@ -36,12 +36,12 @@ export LD_FOR_TARGET=${INSTALL_PREFIX}/bin/clang
     --enable-newlib-global-atexiti \
     --enable-newlib-nano-formatted-io \
     --disable-newlib-fvwrite-in-streamio \
-    --disable-nls
+    --disable-nls \
+    --disable-newlib-io-float
 
 #    --disable-newlib-nano-formatted-io \
 #    --enable-newlib-io-c99-formats \
-#    --enable-newlib-io-float \
-#    --disable-newlib-io-long-double \
+#    --disable-newlib-io-long-double
 
 make
 make install
