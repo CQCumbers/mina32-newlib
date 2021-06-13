@@ -10,8 +10,8 @@ typedef enum {
 
 typedef struct {
   void *ctx;
-  unsigned (*read_mem)(unsigned idx);
-  void (*write_mem)(unsigned idx, unsigned val);
+  unsigned (*read_mem)(unsigned addr);
+  void (*write_mem)(unsigned addr, unsigned val);
   unsigned (*read_reg)(void *ctx, unsigned idx);
   void (*write_reg)(void *ctx, unsigned idx, unsigned val);
   void (*set_break)(unsigned addr);

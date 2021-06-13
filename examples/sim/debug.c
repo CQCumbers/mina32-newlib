@@ -51,8 +51,8 @@ static void send_gdb(sock_t sockfd, const char *data) {
 /* === GDB Protocol commands == */
 
 static debug_t cfg;
-const unsigned N_REGS = 19;
-const char reg_names[N_REGS][5] = {
+const unsigned n_regs = 19;
+const char reg_names[n_regs][5] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
   "mcr", "fret", "pc",
@@ -75,7 +75,7 @@ static void query(sock_t sockfd, const char *cmd_buf) {
     send_gdb(sockfd, "1");  // Dummy PID
   else if (strncmp(cmd_buf, "qRegisterInfo", strlen("qRegisterInfo")) == 0) {
     unsigned long i = strtoul(cmd_buf + strlen("qRegisterInfo"), NULL, 16);
-    if (i >= N_REGS) return send_gdb(sockfd, "E45");
+    if (i >= n_regs) return send_gdb(sockfd, "E45");
     char *ptr = buf + sprintf(buf, "name:%s;bitsize:32;gcc:%lu;", reg_names[i], i);
     const char *set = (i < 16 ? "General Purpose" : "Control");
     ptr += sprintf(ptr, "offset:%lu;encoding:uint;format:hex;", i * 8);
@@ -90,7 +90,7 @@ static void query(sock_t sockfd, const char *cmd_buf) {
 // read all available registers
 static void read_regs(sock_t sockfd) {
   char buf[BUF_SIZE - 4] = {0};
-  for (unsigned idx = 0; idx < N_REGS; ++idx)
+  for (unsigned idx = 0; idx < n_regs; ++idx)
     sprintf(buf + idx * 8, "%08x", htonl(cfg.read_reg(cfg.ctx, idx)));
   send_gdb(sockfd, buf);
 }
@@ -98,7 +98,7 @@ static void read_regs(sock_t sockfd) {
 // write all available registers
 static void write_regs(sock_t sockfd, const char *cmd_buf) {
   char buf[9] = {0};
-  for (unsigned idx = 0; idx < N_REGS; ++idx) {
+  for (unsigned idx = 0; idx < n_regs; ++idx) {
     memcpy(buf, cmd_buf + 1 + idx * 8, 8);
     cfg.write_reg(cfg.ctx, idx, ntohl(strtoul(buf, NULL, 16)));
   }
@@ -177,7 +177,7 @@ void debug_init(unsigned port, debug_t conf) {
   if (reuse != 0) printf("Failed to set gdb socket option\n"), exit(1);
   int bound = bind(tmpsock, (struct sockaddr*)(&server_addr), addr_size);
   if (bound != 0) printf("Failed to bind gdb socket\n"), exit(1);
-  listen(tmpsock, 5), printf("Listening on port %d\n", port);
+  listen(tmpsock, 5), printf("Listening for gdb on port %d\n", port);
 
   // accept socket connection from gdb server
   gdb_sock = accept(tmpsock, (struct sockaddr*)(&client_addr), &addr_size);
@@ -188,6 +188,7 @@ void debug_init(unsigned port, debug_t conf) {
 
 // check socket for ctrl-c from gdb
 unsigned debug_poll(void) {
+  if (!gdb_sock) return 0;
   struct pollfd pfd = {gdb_sock, POLLIN};
   return poll(&pfd, 1, 0) == 1;
 }

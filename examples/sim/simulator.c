@@ -41,7 +41,7 @@ struct break_t {
 
 static char watches[MEM_SIZE];
 static break_t *breaks;
-static unsigned step = 1;
+static unsigned step;
 
 static unsigned read32(unsigned addr);
 static void write32(unsigned addr, unsigned val);
@@ -66,11 +66,8 @@ static void write_reg(void *ctx, unsigned idx, unsigned val) {
 static void set_break(unsigned addr) {
   break_t *tmp = breaks;
   breaks = malloc(sizeof(break_t));
-
   breaks->addr = addr;
-  breaks->inst = read32(addr);
   breaks->next = tmp;
-  write32(addr, 0x70000000);
 }
 
 static void clr_break(unsigned addr) {
@@ -79,13 +76,12 @@ static void clr_break(unsigned addr) {
     ptr = &tmp->next, tmp = *ptr;
 
   if (tmp == NULL) return;
-  write32(addr, tmp->inst);
   *ptr = tmp->next, free(tmp);
 }
 
 static void check_watch(unsigned idx, unsigned len, char type) {
-  // for (unsigned i = idx; i < idx + len; ++i)
-  //   if (watches[i] & type) step = ~i;
+  for (unsigned i = idx; i < idx + len; ++i)
+    if (watches[i] & type) step = ~i;
 }
 
 static void set_watch(unsigned addr, unsigned len, char type) {
@@ -98,6 +94,17 @@ static void clr_watch(unsigned addr, unsigned len, char type) {
   unsigned idx = addr & (MEM_SIZE - 1);
   for (unsigned i = 0; i < len; ++i)
     watches[idx + i] &= ~type;
+}
+
+static void handle_step(void) {
+  for (break_t *i = breaks; i; i = i->next)
+    write32(i->addr, i->inst);
+  step = debug_update(step);
+
+  for (break_t *i = breaks; i; i = i->next) {
+    i->inst = read32(i->addr);
+    write32(i->addr, 0x70000000);
+  }
 }
 
 /* === Memory Mapped IO === */
@@ -177,7 +184,7 @@ static unsigned get_keys(void) {
 /* === Memory Access === */
 
 static unsigned mmio_read(unsigned addr) {
-  switch (addr & 0xfc) {
+  switch (addr & 0xff) {
   case 0x00: return 0x10400;
   case 0x04: return 0x8000 | getchar();
   case 0x10: return cycles >> 13;
@@ -190,7 +197,7 @@ static unsigned mmio_read(unsigned addr) {
 }
 
 static void mmio_write(unsigned addr, unsigned val) {
-  switch (addr & 0xfc) {
+  switch (addr & 0xff) {
   case 0x04: putchar(val & 0xff); return;
   case 0x30: hdmi_addr = val; return;
   case 0x34: hdmi_resx = val; hdmi_dirty = 1; return;
@@ -200,43 +207,43 @@ static void mmio_write(unsigned addr, unsigned val) {
 }
 
 static unsigned read32(unsigned addr) {
-  if (addr >= ~0xff) return mmio_read(addr);
   unsigned val, idx = addr & (MEM_SIZE - 4);
+  if (addr >= ~0xff) return mmio_read(idx);
   check_watch(idx, 4, WATCH_READ);
   return memcpy(&val, mem + idx, 4), val;
 }
 
 static unsigned read16(unsigned addr) {
-  if (addr >= ~0xff) return mmio_read(addr);
   unsigned val, idx = addr & (MEM_SIZE - 2);
+  if (addr >= ~0xff) return mmio_read(idx) & 0xffff;
   check_watch(idx, 2, WATCH_READ);
   return memcpy(&val, mem + idx, 2), val;
 }
 
 static unsigned read8(unsigned addr) {
-  if (addr >= ~0xff) return mmio_read(addr);
   unsigned val, idx = addr & (MEM_SIZE - 1);
+  if (addr >= ~0xff) return mmio_read(idx) & 0xff;
   check_watch(idx, 1, WATCH_READ);
   return memcpy(&val, mem + idx, 1), val;
 }
 
 static void write32(unsigned addr, unsigned val) {
-  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 4);
+  if (addr >= ~0xff) return mmio_write(idx, val);
   check_watch(idx, 4, WATCH_WRITE);
   memcpy(mem + idx, &val, 4);
 }
 
 static void write16(unsigned addr, unsigned val) {
-  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 2);
+  if (addr >= ~0xff) return mmio_write(idx, val);
   check_watch(idx, 2, WATCH_WRITE);
   memcpy(mem + idx, &val, 2);
 }
 
 static void write8(unsigned addr, unsigned val) {
-  if (addr >= ~0xff) mmio_write(addr, val);
   unsigned idx = addr & (MEM_SIZE - 1);
+  if (addr >= ~0xff) return mmio_write(idx, val);
   check_watch(idx, 1, WATCH_WRITE);
   memcpy(mem + idx, &val, 1);
 }
@@ -299,7 +306,6 @@ static int imms(inst_t inst, int shift) {
 }
 
 static void fault(mina_t *cpu, int type) {
-  printf("FAULT TYPE %d at %x\n", type, cpu->pc);
   cpu->fret = cpu->pc, cpu->pc = 0;
   cpu->omcr = cpu->mcr.val;
   cpu->mcr.mode = 1, cpu->mcr.id = 1;
@@ -313,7 +319,7 @@ static void execute(mina_t *cpu) {
     regs = cpu->regs, cpu->pc = next;
     if (!(cycles++ & 0xfff)) step |= debug_poll();
     if (!(cycles & 0x3ffff)) hdmi_update();
-    if (step) step = debug_update(step);
+    if (step) handle_step();
 
     next = cpu->pc + 4;
     inst_t inst = {read32(cpu->pc)};
@@ -934,7 +940,7 @@ int validELF(Elf32_Ehdr *ehdr) {
 }
 
 int main(int argc, const char* argv[]) {
-  if (argc != 2)
+  if (argc != 2 && argc != 3)
     puts("Usage: ./simulator <ELF>"), exit(1);
   FILE *fd = fopen(argv[1], "r");
   if (!fd) puts("Can't open file"), exit(1);
@@ -972,13 +978,17 @@ int main(int argc, const char* argv[]) {
 
   // Setup debugger
   mina_t cpu = {0};
-  debug_t conf = {
-    &cpu, read8, write8,
-    read_reg, write_reg,
-    set_break, clr_break,
-    set_watch, clr_watch
-  };
-  debug_init(4242, conf);
+  if (argc == 3) {
+    int port = atoi(argv[2]);
+    debug_t conf = {
+      &cpu, read8, write8,
+      read_reg, write_reg,
+      set_break, clr_break,
+      set_watch, clr_watch
+    };
+    debug_init(port, conf);
+    handle_step();
+  }
 
   // Start CPU at reset
   fault(&cpu, FAULT_RESET);
