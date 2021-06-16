@@ -1,11 +1,31 @@
 #include <stdio.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 
-extern int _end;
-const int outChar = 0xffffff04;
-const int inChar = 0xffffff05;
+// minaret BSP
+
+#define IO_REG32 (volatile uint32_t*)
+#define MINA_UART_CTRL (*(IO_REG32 0xffffff00))
+#define MINA_UART_DATA (*(IO_REG32 0xffffff04))
+
+void mina_uart_putc(char c) {
+  // wait for write fifo space
+  // see altera jtag uart docs
+  while (MINA_UART_CTRL >> 16 == 0);
+  MINA_UART_DATA = (uint32_t)c;
+}
+
+char mina_uart_getc(void) {
+  // wait for valid read
+  uint32_t data = 0;
+  while (~(data = MINA_UART_DATA) & 0x8000);
+  return (char)data;
+}
+
+// newlib stubs
 
 void *_sbrk(int incr) {
+  extern int _end;
   static unsigned char *heap;
   unsigned char *prev_heap;
 
@@ -54,7 +74,7 @@ int _write (int file, char * ptr, int len) {
   }
 
   for (; len != 0; --len) {
-    *(uint8_t*)outChar = (uint8_t)*ptr++;
+    mina_uart_putc(*ptr++);
     ++written;
   }
   return written;
@@ -68,11 +88,13 @@ int _read (int file, char * ptr, int len) {
   }
 
   for (; len > 0; --len) {
-    *(uint8_t*)inChar = (uint8_t)*ptr++;
+    *ptr++ = mina_uart_getc();
     read++;
   }
   return read;
 }
+
+// demo program
 
 int main() {
   puts("Hello, World!");

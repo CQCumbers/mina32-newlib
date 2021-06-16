@@ -184,7 +184,7 @@ static unsigned get_keys(void) {
 /* === Memory Access === */
 
 static unsigned mmio_read(unsigned addr) {
-  switch (addr & 0xff) {
+  switch (addr & 0xfc) {
   case 0x00: return 0x10400;
   case 0x04: return 0x8000 | getchar();
   case 0x10: return cycles >> 13;
@@ -197,7 +197,7 @@ static unsigned mmio_read(unsigned addr) {
 }
 
 static void mmio_write(unsigned addr, unsigned val) {
-  switch (addr & 0xff) {
+  switch (addr & 0xfc) {
   case 0x04: putchar(val & 0xff); return;
   case 0x30: hdmi_addr = val; return;
   case 0x34: hdmi_resx = val; hdmi_dirty = 1; return;
