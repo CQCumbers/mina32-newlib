@@ -27,11 +27,13 @@ _start:
     movi r0, 0
     movu r1, %hi(__bss_start)
     movl r1, %lo(__bss_start)
+    movu r2, %hi(__bss_end)
+    movl r2, %lo(__bss_end)
 .L2:
     st r0, [r1, 0]
     addi r1, r1, 4
-    cmp.eq r1, r15
-    bf .L2
+    cmp.ls r1, r2
+    bt .L2
 
 ; Jump to main
     movi r1, 0
@@ -40,5 +42,4 @@ _start:
 
 ; Hang upon return
     call exit
-.L3:
-    bra .L3
+    bra .L1

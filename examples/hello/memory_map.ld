@@ -5,7 +5,7 @@ MEMORY
   ram (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00010000
 }
 
-STACK_SIZE = 0x2000;
+STACK_SIZE = 0x800;
 
 /* Section Definitions */
 SECTIONS
@@ -38,9 +38,11 @@ SECTIONS
 
   .bss (NOLOAD) :
   {
+    . = ALIGN(4);
     __bss_start = .;
     *(.bss*)
     *(COMMON)
+    . = ALIGN(4);
     __bss_end = .;
   } > ram
 
@@ -52,5 +54,5 @@ SECTIONS
     . = ALIGN(4);
   } > ram
 
-  _end = . ;
+  _end = .;
 }
