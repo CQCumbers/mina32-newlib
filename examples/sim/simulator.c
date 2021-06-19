@@ -143,6 +143,9 @@ static unsigned key_code(SDL_Event e) {
 }
 
 static void hdmi_update(void) {
+  // skip if resolution 0
+  if (!hdmi_resx || !hdmi_resy) return;
+
   // update frame resolution
   if (hdmi_dirty) {
     if (texture) SDL_DestroyTexture(texture);
