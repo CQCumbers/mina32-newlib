@@ -702,7 +702,7 @@ static void execute(mina_t *cpu) {
       break;
     }
 
-    /* === Move Instructions == */
+    /* === Move Instructions === */
     case 0x50: {  // MOVI
       regs[inst.i.dest] = imms(inst, 0);
       break;

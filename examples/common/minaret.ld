@@ -2,10 +2,11 @@ OUTPUT_FORMAT(elf32-mina32)
 
 MEMORY
 {
-  ram (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00010000
+  ram (rwx) : ORIGIN = DEFINED(make_boot) ? 0x80000000 : 0x00000000,
+              LENGTH = DEFINED(make_boot) ? 0x00013000 : 0x04000000
 }
 
-STACK_SIZE = 0x800;
+STACK_SIZE = DEFINED(make_boot) ? 0x400 : 0x10000;
 
 /* Section Definitions */
 SECTIONS

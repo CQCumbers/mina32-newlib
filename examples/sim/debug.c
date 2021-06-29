@@ -9,7 +9,7 @@
 #define BUF_SIZE 2048
 typedef int sock_t;
 
-/* === GDB Socket interaction == */
+/* === GDB Socket interaction === */
 
 static sock_t gdb_sock;
 static char cmd_buf[BUF_SIZE];
@@ -48,7 +48,7 @@ static void send_gdb(sock_t sockfd, const char *data) {
   while (ptr != end) ptr += send(sockfd, ptr, end - ptr, 0);
 }
 
-/* === GDB Protocol commands == */
+/* === GDB Protocol commands === */
 
 static debug_t cfg;
 const unsigned n_regs = 19;
@@ -68,7 +68,7 @@ static void query(sock_t sockfd, const char *cmd_buf) {
   else if (strncmp(cmd_buf, "qProcessInfo", strlen("qProcessInfo")) == 0)
     send_gdb(sockfd, "triple:6d696e6133322d756e6b6e6f776e2d656c66;pid:1;");
   else if (strncmp(cmd_buf, "qfThreadInfo", strlen("qfThreadInfo")) == 0)
-    send_gdb(sockfd, "m-1");
+    send_gdb(sockfd, "m0");
   else if (strncmp(cmd_buf, "qsThreadInfo", strlen("qsThreadInfo")) == 0)
     send_gdb(sockfd, "l");
   else if (strncmp(cmd_buf, "qC", strlen("qC")) == 0)

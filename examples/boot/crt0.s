@@ -41,5 +41,4 @@ _start:
     call main
 
 ; Hang upon return
-    call exit
     bra .L1
