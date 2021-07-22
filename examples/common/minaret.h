@@ -6,7 +6,7 @@
 
 // mmio register map
 #define MINA_HDMI_PAL  ((uint32_t*) 0x80000000)
-#define MINA_HDMI_PIX  ((uint32_t*) 0x80000100)
+#define MINA_HDMI_PIX  ((uint32_t*) 0x80000400)
 #define MINA_UART_CTRL (*(IO_REG32 0xffffff00))
 #define MINA_UART_DATA (*(IO_REG32 0xffffff04))
 #define MINA_TIMER     (*(IO_REG32 0xffffff10))

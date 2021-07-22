@@ -17,16 +17,16 @@ void events_add(uint32_t event) {
 // from effectgames.com
 
 typedef struct {
-  int16_t rate;
+  uint8_t ms;
   uint8_t lo;
   uint8_t hi;
 } cycle_t;
 
 const cycle_t coral_crt[] = {
-  {   1,224,231},{1842,171,176},{1689,163,170},{1536,155,162},
-  {1536,146,153},{1536,137,144},{2457,128,135},{2304,113,117},
-  {1689,103,110},{1536, 95,102},{3456, 87, 94},{2148, 73, 80},
-  {2457, 56, 63},{3456, 48, 55},{3456, 32, 47},{3456, 16, 31}
+  { -1,224,231},{148,171,176},{161,163,170},{177,155,162},
+  {177,146,153},{177,137,144},{111,128,135},{118,113,117},
+  {161,103,110},{177, 95,102},{ 79, 87, 94},{127, 73, 80},
+  {111, 56, 63},{ 79, 48, 55},{ 79, 32, 47},{ 79, 16, 31}
 };
 
 const uint32_t coral_pal[] = {
@@ -2471,8 +2471,8 @@ int main(int argc, char* argv[]) {
   // setup scheduler
   uint32_t now = MINA_TIMER;
   for (int i = 0; i < 16; ++i) {
-    uint32_t ms = RATE / coral_crt[i].rate;
-    events_add((now + ms) * 16 + i);
+    cycle_t cyc = coral_crt[i];
+    events_add((now + cyc.ms) * 16 + i);
   }
 
   // copy palette and image
@@ -2481,13 +2481,14 @@ int main(int argc, char* argv[]) {
 
   for (;;) {
     // wait for next event
-    while (MINA_TIMER < events[0]);
+    while (MINA_TIMER * 16 < events[0]);
     cycle_t cyc = coral_crt[events[0] % 16];
+    events_add(cyc.ms * 16 + events[0]);
 
     // cycle palette colors
     uint32_t tmp = MINA_HDMI_PAL[cyc.hi];
-    for (int i = cyc.lo; i < cyc.hi; ++i)
-      MINA_HDMI_PAL[i + 1] = MINA_HDMI_PAL[i];
+    for (int i = cyc.hi; i > cyc.lo; --i)
+      MINA_HDMI_PAL[i] = MINA_HDMI_PAL[i - 1];
     MINA_HDMI_PAL[cyc.lo] = tmp;
   }
 

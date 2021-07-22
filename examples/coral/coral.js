@@ -43,5 +43,6 @@ str = '';
 let crt = CC.palettes.vw8g.cycles;
 
 for (let i = 0; i < 16; i++) {
-  str += `{${crt[i].rate},${crt[i].low},${crt[i].high}},`;
+  let rate = Math.floor(273067 / crt[i].rate);
+  str += `{${rate},${crt[i].low},${crt[i].high}},`;
 }

@@ -5,8 +5,9 @@
 #include <string.h>
 #include <SDL2/SDL.h>
 
-#define MEM_SIZE 0x04000000
-static char mem[MEM_SIZE];
+#define MEM_SIZE   0x04000000
+#define HDMI_SIZE  0x00020000
+static unsigned char mem[MEM_SIZE + HDMI_SIZE];
 
 typedef struct {
   unsigned regs[16];
@@ -80,6 +81,7 @@ static void clr_break(unsigned addr) {
 }
 
 static void check_watch(unsigned idx, unsigned len, char type) {
+  if (idx >= MEM_SIZE) return;
   for (unsigned i = idx; i < idx + len; ++i)
     if (watches[i] & type) step = ~i;
 }
@@ -118,11 +120,6 @@ static unsigned key_queue[16];
 static unsigned key_read;
 static unsigned key_write;
 
-static unsigned hdmi_dirty;
-static unsigned hdmi_addr;
-static unsigned hdmi_resx;
-static unsigned hdmi_resy;
-
 static unsigned key_code(SDL_Event e) {
   // based on doomgeneric
   unsigned key = e.key.keysym.sym;
@@ -143,25 +140,18 @@ static unsigned key_code(SDL_Event e) {
 }
 
 static void hdmi_update(void) {
-  // skip if resolution 0
-  if (!hdmi_resx || !hdmi_resy) return;
+  // copy frame to screen
+  void *pixels; int pitch;
+  SDL_LockTexture(texture, NULL, &pixels, &pitch);
 
-  // update frame resolution
-  if (hdmi_dirty) {
-    if (texture) SDL_DestroyTexture(texture);
-    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-      SDL_TEXTUREACCESS_STREAMING, hdmi_resx, hdmi_resy);
-    hdmi_dirty = 0;
+  unsigned char *hdmi = mem + MEM_SIZE;
+  for (int i = 0; i < 320 * 240; ++i) {
+    unsigned color = hdmi[1024 + i] * 4;
+    memcpy(pixels + i * 4, hdmi + color, 4);
   }
 
-  // copy frame to screen
-  void *pixels = NULL;
-  int pitch, res = hdmi_resx * hdmi_resy;
-  SDL_LockTexture(texture, NULL, &pixels, &pitch);
-  memcpy(pixels, mem + hdmi_addr, res * 4);
-  SDL_UnlockTexture(texture);
-
   // present updated screen
+  SDL_UnlockTexture(texture);
   SDL_RenderCopy(renderer, texture, NULL, NULL);
   SDL_RenderPresent(renderer);
 
@@ -190,11 +180,8 @@ static unsigned mmio_read(unsigned addr) {
   switch (addr & 0xfc) {
   case 0x00: return 0x10400;
   case 0x04: return 0x8000 | getchar();
-  case 0x10: return cycles >> 13;
+  case 0x10: return cycles >> 16;
   case 0x20: return get_keys();
-  case 0x30: return hdmi_addr;
-  case 0x34: return hdmi_resx;
-  case 0x38: return hdmi_resy;
   default: return 0;
   }
 }
@@ -202,9 +189,6 @@ static unsigned mmio_read(unsigned addr) {
 static void mmio_write(unsigned addr, unsigned val) {
   switch (addr & 0xfc) {
   case 0x04: putchar(val & 0xff); return;
-  case 0x30: hdmi_addr = val; return;
-  case 0x34: hdmi_resx = val; hdmi_dirty = 1; return;
-  case 0x38: hdmi_resy = val; hdmi_dirty = 1; return;
   default: return;
   }
 }
@@ -212,6 +196,7 @@ static void mmio_write(unsigned addr, unsigned val) {
 static unsigned read32(unsigned addr) {
   unsigned val, idx = addr & (MEM_SIZE - 4);
   if (addr >= ~0xff) return mmio_read(idx);
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 4, WATCH_READ);
   return memcpy(&val, mem + idx, 4), val;
 }
@@ -219,6 +204,7 @@ static unsigned read32(unsigned addr) {
 static unsigned read16(unsigned addr) {
   unsigned val, idx = addr & (MEM_SIZE - 2);
   if (addr >= ~0xff) return mmio_read(idx) & 0xffff;
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 2, WATCH_READ);
   return memcpy(&val, mem + idx, 2), val;
 }
@@ -226,6 +212,7 @@ static unsigned read16(unsigned addr) {
 static unsigned read8(unsigned addr) {
   unsigned val, idx = addr & (MEM_SIZE - 1);
   if (addr >= ~0xff) return mmio_read(idx) & 0xff;
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 1, WATCH_READ);
   return memcpy(&val, mem + idx, 1), val;
 }
@@ -233,6 +220,7 @@ static unsigned read8(unsigned addr) {
 static void write32(unsigned addr, unsigned val) {
   unsigned idx = addr & (MEM_SIZE - 4);
   if (addr >= ~0xff) return mmio_write(idx, val);
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 4, WATCH_WRITE);
   memcpy(mem + idx, &val, 4);
 }
@@ -240,6 +228,7 @@ static void write32(unsigned addr, unsigned val) {
 static void write16(unsigned addr, unsigned val) {
   unsigned idx = addr & (MEM_SIZE - 2);
   if (addr >= ~0xff) return mmio_write(idx, val);
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 2, WATCH_WRITE);
   memcpy(mem + idx, &val, 2);
 }
@@ -247,6 +236,7 @@ static void write16(unsigned addr, unsigned val) {
 static void write8(unsigned addr, unsigned val) {
   unsigned idx = addr & (MEM_SIZE - 1);
   if (addr >= ~0xff) return mmio_write(idx, val);
+  if ((int)addr < 0) idx = MEM_SIZE + idx % HDMI_SIZE;
   check_watch(idx, 1, WATCH_WRITE);
   memcpy(mem + idx, &val, 1);
 }
@@ -967,7 +957,7 @@ int main(int argc, const char* argv[]) {
     if (phdrs[i].p_type != PT_LOAD) continue;
     if (fseek(fd, phdrs[i].p_offset, SEEK_SET))
       puts("Can't seek segment"), exit(1);
-    char *seg = mem + phdrs[i].p_vaddr;
+    unsigned char *seg = mem + phdrs[i].p_vaddr;
     if (!fread(seg, phdrs[i].p_filesz, 1, fd))
       puts("Can't read segment"), exit(1);
   }
@@ -978,6 +968,9 @@ int main(int argc, const char* argv[]) {
   SDL_CreateWindowAndRenderer(640, 480, 0, &window, &renderer);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
   SDL_RenderClear(renderer);
+
+  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+    SDL_TEXTUREACCESS_STREAMING, 320, 240);
 
   // Setup debugger
   mina_t cpu = {0};

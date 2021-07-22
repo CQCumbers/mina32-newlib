@@ -44,11 +44,10 @@ void _exit(int status) {
 
 #define MAX_ADDRESS 0x04000000
 #define LINE_LENGTH 256
-void (*const start_app)(void);
 
-static int hex2int(const char *s, int n) {
+static unsigned hex2int(const char *s, int n) {
   // convert ascii hex digits to int
-  int data = 0, c = 0;
+  unsigned data = 0, c = 0;
   while (n-- && (c = *s++)) {
     if (c >= '0' && c <= '9') c -= '0';
     else if (c >= 'A' && c <= 'F') c -= '7';
@@ -58,9 +57,10 @@ static int hex2int(const char *s, int n) {
   return data;
 }
 
-static void fail(const char *s) {
+static void fail(const char *line, const char *msg) {
   // print message and exit
-  mina_uart_puts(s);
+  mina_uart_puts(line);
+  mina_uart_puts(msg);
   _exit(EXIT_FAILURE);
 }
 
@@ -68,30 +68,31 @@ int main(void) {
   // print help message
   mina_uart_puts("MINA32 UART Bootloader v0.1");
   mina_uart_puts("Paste intel hex file below:");
+  uint32_t segment = 0, start = 0;
 
   while (1) {
     // read ihex record
     char line[LINE_LENGTH];
     mina_uart_gets(line, LINE_LENGTH);
-    mina_uart_puts(line);
-    if (line[0] != ':') fail("No start code");
+    if (line[0] != ':') fail(line, "No start code");
 
     // verify checksum
     uint8_t checksum = 0;
     for (int i = 1; line[i] && line[i+1]; i += 2)
       checksum += hex2int(line + i, 2);
-    if (checksum != 0) fail("Checksum fail");
+    if (checksum != 0) fail(line, "Checksum fail");
 
     // parse record fields
     uint8_t count = hex2int(line + 1, 2);
-    uint16_t address = hex2int(line + 3, 4);
+    uint32_t address = hex2int(line + 3, 4);
     uint8_t record_type = hex2int(line + 7, 2); 
 
-    // verify address
-    if (address + count >= MAX_ADDRESS)
-      fail("Record address out of bounds");
-
     if (record_type == 0x00) {
+      // verify address
+      address = segment + address;
+      if (address + count >= MAX_ADDRESS)
+        fail(line, "Record address out of bounds");
+
       // handle data record
       for (int i = 0; i < count; i++) {
         uint8_t byte = hex2int(line + 9 + i * 2, 2);
@@ -100,9 +101,18 @@ int main(void) {
     } else if (record_type == 0x01) {
       // handle end of file record
       mina_uart_puts("App loaded");
-      start_app();
+      ((void(*)(void))start)();
+    } else if (record_type == 0x02) {
+      // handle extended segment address
+      if (count != 2) fail(line, "Invalid count");
+      segment = hex2int(line + 9, 4) << 4;
+    } else if (record_type == 0x03) {
+      // handle start segment address
+      if (count != 4) fail(line, "Invalid count");
+      start = hex2int(line + 9, 8);
     } else {
-      // handle address records
+      // ignore other record types
+      mina_uart_puts(line);
       mina_uart_puts("Ignored record type");
     }
   }
